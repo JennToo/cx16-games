@@ -30,7 +30,9 @@
 #define GREEN 5
 #define YELLOW 7
 #define DARK_GREY 11
-#define BOARD_COLOR ((BROWN << 4) | BLACK)
+#define LIGHT_GREY 15
+#define ORANGE 8
+#define BOARD_COLOR ((YELLOW << 4) | BLACK)
 
 #define DIRECTION_HORIZONTAL VERA_INC_2
 #define DIRECTION_VERTICAL VERA_INC_128
@@ -43,9 +45,11 @@
 
 char board[BOARD_HEIGHT][BOARD_WIDTH];
 
+void play_piece(char x, char y, char color);
+
 void init_video(void) {
   unsigned i;
-  waitvsync();
+  char old_irq = VERA.irq_enable;
   VERA.control = 0;
   VERA.irq_enable = 0;
 
@@ -86,7 +90,7 @@ void init_video(void) {
   VERA.address_hi = VERA_INC_1;
   for (i = 0; i < 32 * 64 * 2; i = i + 2) {
     VERA.data0 = ' ';
-    VERA.data0 = (YELLOW << 4) | BLACK;
+    VERA.data0 = (ORANGE << 4) | BLACK;
   }
   for (i = 32 * 64 * 2; i < 32 * 64 * 2 * 2; i = i + 2) {
     VERA.data0 = ' ';
@@ -94,6 +98,7 @@ void init_video(void) {
   }
 
   VERA.display.video = VGA_MODE | LAYER_0_ENABLE | LAYER_1_ENABLE;
+  VERA.irq_enable = old_irq;
 }
 
 void write_string(const char *line, char x, char y, char direction,
@@ -182,19 +187,76 @@ void draw_pieces() {
   }
 }
 
+char turn = PIECE_BLACK_MASK;
+
+void try_move(char x, char y) {
+  char current_value = board[y][x];
+  if (current_value & (PIECE_BLACK_MASK | PIECE_WHITE_MASK)) {
+    // Illegal move
+    return;
+  }
+
+  play_piece(x, y, turn);
+  if (turn == PIECE_BLACK_MASK) {
+    turn = PIECE_WHITE_MASK;
+    draw_tile(0x51, (BLACK << 4) | WHITE, 1, 26, 1);
+  } else {
+    turn = PIECE_BLACK_MASK;
+    draw_tile(0x51, (BLACK << 4) | DARK_GREY, 1, 26, 1);
+  }
+}
+
 void play_piece(char x, char y, char color) {
   board[y][x] = color;
   draw_pieces();
 }
 
+char move_input[3] = {' ', ' ', 0};
+char move_input_cursor = 0;
+
 void play_game() {
   draw_board();
   draw_pieces();
 
-  play_piece(9, 9, PIECE_BLACK_MASK);
-  play_piece(9, 9 + 1, PIECE_WHITE_MASK);
+  write_string("move:", 2, 26, DIRECTION_HORIZONTAL, 0);
+  draw_tile(0x51, (BLACK << 4) | DARK_GREY, 1, 26, 1);
 
   while (1) {
+    if (kbhit()) {
+      char c = cgetc();
+      draw_tile(c, BOARD_COLOR, 0, 0, 0);
+
+      if (c >= 0x41 && c < 0x54) {
+        if (move_input_cursor < 2) {
+          move_input[move_input_cursor] = c;
+          ++move_input_cursor;
+        }
+      } else {
+        switch (c) {
+        case 0x14:
+          if (move_input_cursor > 0) {
+            move_input[--move_input_cursor] = ' ';
+          }
+          break;
+        case 0x0D:
+          if (move_input_cursor == 2) {
+            try_move(move_input[0] - 0x41, move_input[1] - 0x41);
+            move_input_cursor = 0;
+            move_input[0] = ' ';
+            move_input[1] = ' ';
+          }
+          break;
+        }
+      }
+      if (move_input_cursor == 2) {
+        draw_tile(0x51, (BLACK << 4) | LIGHT_GREY, (move_input[0] - 0x41) + 11,
+                  (move_input[1] - 0x41) + 5, 1);
+      } else {
+        draw_pieces();
+      }
+      write_string(move_input, 7, 26, DIRECTION_HORIZONTAL, 0);
+    }
+
     waitvsync();
   }
 }
