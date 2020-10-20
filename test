@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -ex
+
+cl65 -t cx16 -O -o weiqi16.prg weiqi16.c
+
+x16emu -prg ./weiqi16.prg -run -log V
