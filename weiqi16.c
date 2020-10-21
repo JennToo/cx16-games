@@ -32,8 +32,9 @@
 #define YELLOW 7
 #define DARK_GREY 11
 #define LIGHT_GREY 15
+#define GREY 12
 #define ORANGE 8
-#define BOARD_COLOR ((YELLOW << 4) | BLACK)
+#define BOARD_COLOR ((YELLOW << 4) | GREY)
 
 #define DIRECTION_HORIZONTAL VERA_INC_2
 #define DIRECTION_VERTICAL VERA_INC_128
@@ -45,13 +46,25 @@
 #define PIECE_BLACK_MASK 0b00000010
 #define PIECE_LIVING_MASK 0b00000100
 
+typedef unsigned char u8;
+
 const char *board_label = "abcdefghijklmnopqrs";
+const char *illegal_move = "illegal move";
+const char *no_message = "            ";
+
+#define STAR_POINT_CHAR 0x57
+
+const u8 star_point_tile[8] = {
+    0b00011000, 0b00011000, 0b00111100, 0b11111111,
+    0b11111111, 0b00111100, 0b00011000, 0b00011000,
+};
 
 // -------------------- Global state -------------------------
 char board[BOARD_HEIGHT][BOARD_WIDTH];
 char move_input[3] = {' ', ' ', 0};
 char move_input_cursor = 0;
 char turn = PIECE_BLACK_MASK;
+const char *message;
 
 // -------------------- Prototypes -------------------------
 char find_living_neighbors_of(char x, char y);
@@ -94,6 +107,13 @@ void init_video(void) {
     VERA.data0 = ((char *)DEFAULT_CHARS_ADDR)[i];
   }
   VIA1.prb = 0;
+
+  // Add custom chars
+  VERA.address = TILE_BASE_ADDRESS + (STAR_POINT_CHAR * 8);
+  VERA.address_hi = VERA_INC_1;
+  for (i = 0; i < 8; ++i) {
+    VERA.data0 = star_point_tile[i];
+  }
 
   // Clear layers 0 and 1
   VERA.address = LAYER0_MAP_ADDRESS;
@@ -160,6 +180,12 @@ void draw_board() {
   }
   draw_line(0x71, BOARD_COLOR, x, y, 17, DIRECTION_HORIZONTAL, 0);
 
+  for (y = 3; y < 19; y += 6) {
+    for (x = 3; x < 19; x += 6) {
+      draw_tile(STAR_POINT_CHAR, BOARD_COLOR, x + 11, y + 5, 0);
+    }
+  }
+
   draw_line(0x6B, BOARD_COLOR, 11, 6, 17, DIRECTION_VERTICAL, 0);
   draw_line(0x73, BOARD_COLOR, 29, 6, 17, DIRECTION_VERTICAL, 0);
 
@@ -188,12 +214,7 @@ void draw_pieces() {
       } else if (piece & PIECE_WHITE_MASK) {
         draw_piece(WHITE, x + 11, y + 5);
       } else {
-        if ((x == 3 && y == 3) || (x == 15 && y == 3) || (x == 15 && y == 15) ||
-            (x == 3 && y == 15)) {
-          draw_tile(0x57, (BLACK << 4) | DARK_GREY, x + 11, y + 5, 1);
-        } else {
-          draw_tile(' ', 0, x + 11, y + 5, 1);
-        }
+        draw_tile(' ', 0, x + 11, y + 5, 1);
       }
     }
   }
@@ -294,7 +315,7 @@ void try_move(char x, char y) {
   }
 
   if (current_value & (PIECE_BLACK_MASK | PIECE_WHITE_MASK)) {
-    // Illegal move
+    message = illegal_move;
     return;
   }
 
@@ -305,13 +326,15 @@ void try_move(char x, char y) {
     // If we didn't kill anything, we need to check for suicide move
     dead_stones = mark_dead_stones_for(turn);
     if (dead_stones > 0) {
-      // Illegal move, revert to empty
+      message = illegal_move;
       board[y][x] = 0;
       return;
     }
   } else {
     sweep_dead_stones_for(opposing_player);
   }
+
+  message = no_message;
 
   // Move was OK, commit it
   draw_pieces();
@@ -326,6 +349,8 @@ void try_move(char x, char y) {
 void play_game() {
   draw_board();
   draw_pieces();
+
+  message = no_message;
 
   write_string("move:", 2, 26, DIRECTION_HORIZONTAL, 0);
   draw_piece(DARK_GREY, 1, 26);
@@ -371,6 +396,7 @@ void play_game() {
         draw_pieces();
       }
       write_string(move_input, 7, 26, DIRECTION_HORIZONTAL, 0);
+      write_string(message, 7, 27, DIRECTION_HORIZONTAL, 0);
     }
 
     waitvsync();
