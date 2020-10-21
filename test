@@ -4,4 +4,4 @@ set -ex
 
 cl65 -t cx16 -O -o weiqi16.prg weiqi16.c
 
-x16emu -prg ./weiqi16.prg -debug -run -log V
+x16emu -prg ./weiqi16.prg -debug -run

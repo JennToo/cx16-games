@@ -2,6 +2,7 @@
 #include <conio.h>
 #include <cx16.h>
 
+// -------------------- Constants -------------------------
 #define VGA_MODE 0b00000001
 #define CHROMA_DISABLE 0b00000100
 #define LAYER_0_ENABLE 0b00010000
@@ -42,11 +43,20 @@
 
 #define PIECE_WHITE_MASK 0b00000001
 #define PIECE_BLACK_MASK 0b00000010
+#define PIECE_LIVING_MASK 0b00000100
 
+const char *board_label = "abcdefghijklmnopqrs";
+
+// -------------------- Global state -------------------------
 char board[BOARD_HEIGHT][BOARD_WIDTH];
+char move_input[3] = {' ', ' ', 0};
+char move_input_cursor = 0;
+char turn = PIECE_BLACK_MASK;
 
-void play_piece(char x, char y, char color);
+// -------------------- Prototypes -------------------------
+char find_living_neighbors_of(char x, char y);
 
+// -------------------- Video stuff -------------------------
 void init_video(void) {
   unsigned i;
   char old_irq = VERA.irq_enable;
@@ -141,8 +151,6 @@ void draw_tile(char value, char color, char x, char y, char layer1) {
   VERA.address = 0;
 }
 
-const char *board_label = "abcdefghijklmnopqrs";
-
 void draw_board() {
   char x = 12;
   char y = 5;
@@ -165,6 +173,10 @@ void draw_board() {
   write_string(board_label, 10, 5, DIRECTION_VERTICAL, 0);
 }
 
+void draw_piece(char color, char x, char y) {
+  draw_tile(0x51, (BLACK << 4) | color, x, y, 1);
+}
+
 void draw_pieces() {
   char x, y, piece;
   for (y = 0; y < BOARD_HEIGHT; ++y) {
@@ -172,9 +184,9 @@ void draw_pieces() {
       piece = board[y][x];
 
       if (piece & PIECE_BLACK_MASK) {
-        draw_tile(0x51, (BLACK << 4) | DARK_GREY, x + 11, y + 5, 1);
+        draw_piece(DARK_GREY, x + 11, y + 5);
       } else if (piece & PIECE_WHITE_MASK) {
-        draw_tile(0x51, (BLACK << 4) | WHITE, x + 11, y + 5, 1);
+        draw_piece(WHITE, x + 11, y + 5);
       } else {
         if ((x == 3 && y == 3) || (x == 15 && y == 3) || (x == 15 && y == 15) ||
             (x == 3 && y == 15)) {
@@ -187,39 +199,143 @@ void draw_pieces() {
   }
 }
 
-char turn = PIECE_BLACK_MASK;
+// -------------------- Gameplay stuff -------------------------
+
+unsigned char mark_dead_stones_for(char player) {
+  unsigned char dead_stones_found = 0;
+  char found_new_living;
+  char x, y, board_value;
+
+  // Reset living flag on all spaces
+  for (y = 0; y < BOARD_HEIGHT; ++y) {
+    for (x = 0; x < BOARD_WIDTH; ++x) {
+      board_value = board[y][x];
+      if ((board_value & (PIECE_WHITE_MASK | PIECE_BLACK_MASK)) != 0) {
+        board[y][x] = board_value & ~(PIECE_LIVING_MASK);
+      } else {
+        board[y][x] = PIECE_LIVING_MASK;
+      }
+    }
+  }
+
+  // Keep marking living stones until no more work is done
+  do {
+    found_new_living = 0;
+    for (y = 0; y < BOARD_HEIGHT; ++y) {
+      for (x = 0; x < BOARD_WIDTH; ++x) {
+        board_value = board[y][x];
+        if (board_value & player) {
+          if ((board_value & PIECE_LIVING_MASK) == 0) {
+            if (find_living_neighbors_of(x, y) != 0) {
+              board[y][x] = board_value | PIECE_LIVING_MASK;
+              found_new_living = 1;
+            }
+          }
+        }
+      }
+    }
+  } while (found_new_living);
+
+  // Count dead stones
+  for (y = 0; y < BOARD_HEIGHT; ++y) {
+    for (x = 0; x < BOARD_WIDTH; ++x) {
+      if ((board[y][x] & (player | PIECE_LIVING_MASK)) == player) {
+        ++dead_stones_found;
+      }
+    }
+  }
+  return dead_stones_found;
+}
+
+char find_living_neighbors_of(char x, char y) {
+  if (y < BOARD_HEIGHT - 1) {
+    if ((board[y + 1][x] & PIECE_LIVING_MASK) == PIECE_LIVING_MASK) {
+      return 1;
+    }
+  }
+  if (x < BOARD_WIDTH - 1) {
+    if (board[y][x + 1] & PIECE_LIVING_MASK) {
+      return 1;
+    }
+  }
+  if (y > 0) {
+    if (board[y - 1][x] & PIECE_LIVING_MASK) {
+      return 1;
+    }
+  }
+  if (x > 0) {
+    if (board[y][x - 1] & PIECE_LIVING_MASK) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+void sweep_dead_stones_for(char player) {
+  char x, y;
+  for (y = 0; y < BOARD_HEIGHT; ++y) {
+    for (x = 0; x < BOARD_WIDTH; ++x) {
+      if ((board[y][x] & (player | PIECE_LIVING_MASK)) == player) {
+        board[y][x] = 0;
+      }
+    }
+  }
+}
 
 void try_move(char x, char y) {
+  char opposing_player;
+  unsigned char dead_stones;
   char current_value = board[y][x];
+
+  if (turn == PIECE_BLACK_MASK) {
+    opposing_player = PIECE_WHITE_MASK;
+  } else {
+    opposing_player = PIECE_BLACK_MASK;
+  }
+
   if (current_value & (PIECE_BLACK_MASK | PIECE_WHITE_MASK)) {
     // Illegal move
     return;
   }
 
-  play_piece(x, y, turn);
-  if (turn == PIECE_BLACK_MASK) {
-    turn = PIECE_WHITE_MASK;
-    draw_tile(0x51, (BLACK << 4) | WHITE, 1, 26, 1);
+  board[y][x] = turn;
+
+  dead_stones = mark_dead_stones_for(opposing_player);
+  if (dead_stones == 0) {
+    // If we didn't kill anything, we need to check for suicide move
+    dead_stones = mark_dead_stones_for(turn);
+    if (dead_stones > 0) {
+      // Illegal move, revert to empty
+      board[y][x] = 0;
+      return;
+    }
   } else {
-    turn = PIECE_BLACK_MASK;
-    draw_tile(0x51, (BLACK << 4) | DARK_GREY, 1, 26, 1);
+    sweep_dead_stones_for(opposing_player);
   }
-}
 
-void play_piece(char x, char y, char color) {
-  board[y][x] = color;
+  // Move was OK, commit it
   draw_pieces();
+  if (turn == PIECE_BLACK_MASK) {
+    draw_piece(WHITE, 1, 26);
+  } else {
+    draw_piece(DARK_GREY, 1, 26);
+  }
+  turn = opposing_player;
 }
-
-char move_input[3] = {' ', ' ', 0};
-char move_input_cursor = 0;
 
 void play_game() {
   draw_board();
   draw_pieces();
 
   write_string("move:", 2, 26, DIRECTION_HORIZONTAL, 0);
-  draw_tile(0x51, (BLACK << 4) | DARK_GREY, 1, 26, 1);
+  draw_piece(DARK_GREY, 1, 26);
+
+  try_move(7, 6);
+  try_move(1, 1);
+  try_move(7, 8);
+  try_move(1, 2);
+  try_move(8, 7);
+  try_move(7, 7);
 
   while (1) {
     if (kbhit()) {
@@ -249,8 +365,8 @@ void play_game() {
         }
       }
       if (move_input_cursor == 2) {
-        draw_tile(0x51, (BLACK << 4) | LIGHT_GREY, (move_input[0] - 0x41) + 11,
-                  (move_input[1] - 0x41) + 5, 1);
+        draw_piece(LIGHT_GREY, move_input[0] - 0x41 + 11,
+                   move_input[1] - 0x41 + 5);
       } else {
         draw_pieces();
       }
