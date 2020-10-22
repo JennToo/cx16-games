@@ -65,6 +65,8 @@ char move_input[3] = {' ', ' ', 0};
 char move_input_cursor = 0;
 char turn = PIECE_BLACK_MASK;
 const char *message;
+char ko_x = 0;
+char ko_y = 0;
 
 // -------------------- Prototypes -------------------------
 char find_living_neighbors_of(char x, char y);
@@ -292,12 +294,16 @@ char find_living_neighbors_of(char x, char y) {
   return 0;
 }
 
-void sweep_dead_stones_for(char player) {
+void sweep_dead_stones_for(char player, u8 dead_stone_count) {
   char x, y;
   for (y = 0; y < BOARD_HEIGHT; ++y) {
     for (x = 0; x < BOARD_WIDTH; ++x) {
       if ((board[y][x] & (player | PIECE_LIVING_MASK)) == player) {
         board[y][x] = 0;
+        if (dead_stone_count == 1) {
+          ko_x = x;
+          ko_y = y;
+        }
       }
     }
   }
@@ -319,6 +325,11 @@ void try_move(char x, char y) {
     return;
   }
 
+  if (x == ko_x && y == ko_y) {
+    message = illegal_move;
+    return;
+  }
+
   board[y][x] = turn;
 
   dead_stones = mark_dead_stones_for(opposing_player);
@@ -330,8 +341,12 @@ void try_move(char x, char y) {
       board[y][x] = 0;
       return;
     }
-  } else {
-    sweep_dead_stones_for(opposing_player);
+  }
+
+  ko_x = BOARD_WIDTH + 1;
+  ko_y = BOARD_HEIGHT + 1;
+  if (dead_stones > 0) {
+    sweep_dead_stones_for(opposing_player, dead_stones);
   }
 
   message = no_message;
@@ -356,11 +371,13 @@ void play_game() {
   draw_piece(DARK_GREY, 1, 26);
 
   try_move(7, 6);
-  try_move(1, 1);
+  try_move(6, 6);
   try_move(7, 8);
-  try_move(1, 2);
+  try_move(6, 8);
   try_move(8, 7);
   try_move(7, 7);
+  try_move(1, 1);
+  try_move(5, 7);
 
   while (1) {
     if (kbhit()) {
