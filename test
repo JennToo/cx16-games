@@ -1,7 +1,11 @@
 #!/bin/bash
 
+X16_EMU_PATH=/mnt/c/Users/Jennifer/Downloads/x16emu_win-r38
+
 set -ex
 
 cl65 -t cx16 -O -o weiqi16.prg weiqi16.c
 
-x16emu -prg ./weiqi16.prg -debug -run
+cp ./weiqi16.prg $X16_EMU_PATH
+cd $X16_EMU_PATH
+./x16emu.exe -prg ./weiqi16.prg -debug -run

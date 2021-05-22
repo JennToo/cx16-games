@@ -1,4 +1,3 @@
-#include <cbm.h>
 #include <conio.h>
 #include <cx16.h>
 
@@ -47,6 +46,7 @@
 #define PIECE_LIVING_MASK 0b00000100
 
 typedef unsigned char u8;
+typedef unsigned int u16;
 
 const char *board_label = "abcdefghijklmnopqrs";
 const char *illegal_move = "illegal move";
@@ -146,11 +146,11 @@ void write_string(const char *line, char x, char y, char direction,
 
 void draw_line(char value, char color, char x, char y, char length,
                char direction, char layer1) {
-  char *address = LAYER0_MAP_ADDRESS + (64 * 2 * y) + x * 2;
-  VERA.address = address;
+  char *address = (char *)(LAYER0_MAP_ADDRESS + (64 * 2 * y) + x * 2);
+  VERA.address = (u16)address;
   VERA.address_hi = direction;
   VERA.control = VERA_ADDR_2;
-  VERA.address = address + 1;
+  VERA.address = (u16)address + 1;
   VERA.address_hi = direction;
   while (length != 0) {
     VERA.data0 = value;
