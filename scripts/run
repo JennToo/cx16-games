@@ -1,0 +1,9 @@
+#!/bin/bash
+
+X16_EMU_PATH=/mnt/c/Users/Jennifer/Downloads/x16emu_win-r38
+
+set -ex
+
+cp "$1" $X16_EMU_PATH
+cd $X16_EMU_PATH
+./x16emu.exe -prg ./"$(basename "$1")" -debug -run
