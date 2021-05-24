@@ -1,0 +1,43 @@
+.include "cx16.inc"
+.include "cbm_kernal.inc"
+
+.macro load_pointer dest, src
+    lda #<src
+    sta dest
+    lda #>src
+    sta dest+1
+.endmacro
+
+.macro set_cursor x_,y_
+    clc
+    ; Why is this backwards?
+    ldx y_
+    ldy x_
+    jsr PLOT
+.endmacro
+
+.org $080D
+.segment "STARTUP"
+.segment "INIT"
+.segment "ONCE"
+.segment "CODE"
+
+   jmp start
+
+message: .byte "hello world!",0
+
+start:
+    lda #0
+    jsr SCREEN_SET_MODE
+    set_cursor #15,#14
+    load_pointer gREG::r11,message
+    ldy #0
+@loop:
+    lda (gREG::r11),y
+    beq @done
+    jsr BSOUT
+    iny
+    bra @loop
+@done:
+    bra @done
+    rts
